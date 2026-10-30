@@ -1,0 +1,90 @@
+﻿@page "/admin/stock"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+
+<PageTitle>Stock</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Stock actual</h1>
+
+@if (_error != null)
+{
+    <div class="aviso aviso-error">@_error <button class="btn btn-chico" @onclick="Cargar">Reintentar</button></div>
+}
+
+<input type="search" placeholder="Buscar producto..." @bind="_texto" @bind:event="oninput" />
+
+<div class="chips">
+    <button class="chip @(_filtro == "todos" ? "sel" : "")" @onclick='() => _filtro = "todos"'>Todos (@_todos.Count)</button>
+    <button class="chip @(_filtro == "bajo" ? "sel" : "")" @onclick='() => _filtro = "bajo"'>Bajo stock (@_todos.Count(EsBajo))</button>
+    <button class="chip @(_filtro == "sin" ? "sel" : "")" @onclick='() => _filtro = "sin"'>Sin stock (@_todos.Count(p => p.StockActual <= 0))</button>
+</div>
+
+@if (_cargando)
+{
+    <p class="cargando">Cargando...</p>
+}
+
+@foreach (var p in Filtrados)
+{
+    var estado = Formato.EstadoStock(p);
+    <div class="card">
+        <div class="fila" style="align-items:center">
+            <div>
+                <strong>@p.Nombre</strong>
+                <div class="chico">@p.CategoriaNombre · Reponer desde @p.PuntoReposicion · Máx. @p.StockMaximo</div>
+                @if (!p.Activo) { <span class="insignia sin">Dado de baja</span> }
+            </div>
+            <div style="flex:0 0 auto;text-align:right">
+                <div class="precio">@p.StockActual</div>
+                <span class="insignia @estado.Clase">@(estado.Clase == "ok" ? "Normal" : estado.Clase == "bajo" ? "Bajo" : "Sin stock")</span>
+            </div>
+        </div>
+    </div>
+}
+
+@if (!_cargando && !Filtrados.Any() && _error == null)
+{
+    <p class="vacio">No hay productos para mostrar.</p>
+}
+
+@code {
+    private readonly List<Producto> _todos = new();
+    private string _texto = string.Empty;
+    private string _filtro = "todos";
+    private bool _cargando;
+    private string? _error;
+
+    private static bool EsBajo(Producto p) => p.StockActual > 0 && p.StockActual <= p.PuntoReposicion;
+
+    private IEnumerable<Producto> Filtrados => _todos
+        .Where(p => _filtro switch
+        {
+            "bajo" => EsBajo(p),
+            "sin" => p.StockActual <= 0,
+            _ => true
+        })
+        .Where(p => string.IsNullOrWhiteSpace(_texto) || p.Nombre.Contains(_texto, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _error = null;
+        _todos.Clear();
+
+        var pagina = 1;
+        while (true)
+        {
+            var r = await Api.GetProductosAsync(null, pagina, 50, "nombre");
+            if (!r.Ok || r.Datos == null) { _error = r.Error; break; }
+
+            _todos.AddRange(r.Datos.Datos);
+            if (pagina >= r.Datos.TotalPaginas || pagina >= 20) break;
+            pagina++;
+        }
+
+        _cargando = false;
+    }
+}

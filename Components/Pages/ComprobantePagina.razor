@@ -1,0 +1,43 @@
+﻿@page "/comprobante/{VentaId:int}"
+@attribute [Authorize]
+@inject CarritoService Carrito
+
+<PageTitle>Comprobante</PageTitle>
+
+@{
+    var c = Carrito.UltimoComprobante;
+}
+
+@if (c == null || c.VentaId != VentaId)
+{
+    <div class="card vacio">
+        <p>Tu compra Nº @VentaId se registró correctamente.</p>
+        <a class="btn" href="compras">Ver mis compras</a>
+    </div>
+}
+else
+{
+    <div class="aviso aviso-ok"><strong>¡Compra realizada!</strong> Gracias por tu compra.</div>
+
+    <div class="card">
+        <h2 style="margin-top:0">Comprobante Nº @c.VentaId</h2>
+        <div class="chico">@Formato.Fecha(c.Fecha)</div>
+        <div class="separador"></div>
+        <table class="tabla-simple">
+            <tr><th>Producto</th><th class="der">Cant.</th><th class="der">Subtotal</th></tr>
+            @foreach (var l in c.Lineas)
+            {
+                <tr><td>@l.Nombre</td><td class="der">@l.Cantidad</td><td class="der">@Formato.Dinero(l.Subtotal)</td></tr>
+            }
+        </table>
+        <div class="total-barra"><span>Total</span><span>@Formato.Dinero(c.Total)</span></div>
+        <div class="chico">Pagado con @c.Pago · Ref. @c.ReferenciaPago (pago simulado)</div>
+    </div>
+
+    <a class="btn btn-bloque" href="">Seguir comprando</a>
+    <a class="btn btn-sec btn-bloque" href="compras">Ver mis compras</a>
+}
+
+@code {
+    [Parameter] public int VentaId { get; set; }
+}

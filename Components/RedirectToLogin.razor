@@ -1,0 +1,10 @@
+﻿@inject NavigationManager Nav
+
+@code {
+    // Si alguien sin sesión entra a una pantalla protegida, va al login y después vuelve a donde quería ir
+    protected override void OnInitialized()
+    {
+        var destino = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"login?volver={Uri.EscapeDataString(destino)}", replace: true);
+    }
+}

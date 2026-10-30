@@ -1,0 +1,118 @@
+﻿@page "/admin/reportes"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+@inject ArchivoService Archivos
+
+<PageTitle>Reportes</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Reportes en PDF</h1>
+
+@if (_ok != null) { <div class="aviso aviso-ok">@_ok</div> }
+@if (_error != null) { <div class="aviso aviso-error">@_error</div> }
+
+<div class="card">
+    <label>Reporte</label>
+    <select @bind="_tipo">
+        <option value="stock">Stock actual</option>
+        <option value="entradas">Entradas de mercadería</option>
+        <option value="salidas">Salidas (ventas)</option>
+    </select>
+
+    @if (_tipo != "stock")
+    {
+        <div class="fila">
+            <div><label>Desde</label><input type="date" @bind="_desde" /></div>
+            <div><label>Hasta</label><input type="date" @bind="_hasta" /></div>
+        </div>
+    }
+
+    <button class="btn btn-bloque" disabled="@_procesando" @onclick="Generar">
+        @(_procesando ? "Generando..." : "Generar reporte")
+    </button>
+
+    @if (_ruta != null)
+    {
+        <div class="separador"></div>
+        <div class="chico">Reporte listo: @Path.GetFileName(_ruta)</div>
+        <div class="fila">
+            <button class="btn btn-sec" @onclick="Abrir">👁 Ver</button>
+            <button class="btn btn-sec" @onclick="Compartir">📤 Compartir</button>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <h2 style="margin-top:0">Enviar por correo</h2>
+    <label>Destinatario</label>
+    <input type="email" autocapitalize="none" placeholder="destinatario@correo.com" @bind="_email" />
+    <button class="btn btn-bloque" disabled="@_procesando" @onclick="Enviar">
+        @(_procesando ? "Procesando..." : "Enviar reporte")
+    </button>
+</div>
+
+@code {
+    private string _tipo = "stock";
+    private DateTime? _desde = DateTime.Today.AddDays(-30);
+    private DateTime? _hasta = DateTime.Today;
+    private string _email = string.Empty;
+    private string? _ruta;
+    private string? _ok;
+    private string? _error;
+    private bool _procesando;
+
+    // El reporte de stock no usa fechas
+    private DateTime? Desde => _tipo == "stock" ? null : _desde;
+    private DateTime? Hasta => _tipo == "stock" ? null : _hasta;
+
+    private async Task Generar()
+    {
+        _ok = _error = null;
+        _ruta = null;
+        _procesando = true;
+
+        var r = await Api.DescargarReporteAsync(_tipo, Desde, Hasta);
+
+        if (r.Ok && r.Datos != null)
+        {
+            _ruta = await Archivos.GuardarPdfAsync($"reporte-{_tipo}-{DateTime.Now:yyyyMMdd-HHmm}.pdf", r.Datos);
+            _ok = "Reporte generado. Podés verlo o compartirlo.";
+        }
+        else
+        {
+            _error = r.Error;
+        }
+
+        _procesando = false;
+    }
+
+    private async Task Abrir()
+    {
+        try { await Archivos.AbrirAsync(_ruta!, "Reporte"); }
+        catch (Exception) { _error = "No hay una app para ver PDF en el teléfono. Usá «Compartir» para guardarlo o enviarlo."; }
+    }
+
+    private async Task Compartir()
+    {
+        try { await Archivos.CompartirAsync(_ruta!, "Reporte"); }
+        catch (Exception) { _error = "No se pudo abrir el menú de compartir."; }
+    }
+
+    private async Task Enviar()
+    {
+        _ok = _error = null;
+
+        if (string.IsNullOrWhiteSpace(_email) || !_email.Contains('@'))
+        {
+            _error = "Ingresá un correo de destino válido.";
+            return;
+        }
+
+        _procesando = true;
+        var r = await Api.EnviarReporteAsync(_tipo, _email.Trim(), Desde, Hasta);
+        _procesando = false;
+
+        if (r.Ok) _ok = r.Datos?.Mensaje ?? "Reporte enviado.";
+        else _error = r.Error;
+    }
+}

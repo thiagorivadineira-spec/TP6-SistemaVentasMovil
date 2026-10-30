@@ -1,0 +1,119 @@
+﻿@page "/producto/{Id:int}"
+@inject ApiClient Api
+@inject CarritoService Carrito
+@inject NavigationManager Nav
+
+<PageTitle>Producto</PageTitle>
+
+<p><a href="">← Volver al catálogo</a></p>
+
+@if (_cargando)
+{
+    <p class="cargando">Cargando...</p>
+}
+else if (_error != null)
+{
+    <div class="aviso aviso-error">@_error</div>
+}
+else if (_producto != null)
+{
+    var estado = Formato.EstadoStock(_producto);
+    var sinStock = _producto.StockActual <= 0 || !_producto.Activo;
+    var fotos = _producto.Imagenes.Select(i => Api.UrlImagen(i.Url)).Where(u => u != null).ToList();
+
+    <div class="card galeria">
+        @if (fotos.Count > 0)
+        {
+            <img class="principal" src="@fotos[Math.Min(_foto, fotos.Count - 1)]" alt="@_producto.Nombre" />
+            @if (fotos.Count > 1)
+            {
+                <div class="miniaturas">
+                    @for (var i = 0; i < fotos.Count; i++)
+                    {
+                        var indice = i;
+                        <img class="@(indice == _foto ? "sel" : "")" src="@fotos[i]" @onclick="() => _foto = indice" />
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            <div class="producto"><div class="foto">📦</div></div>
+        }
+    </div>
+
+    <div class="card">
+        @if (!string.IsNullOrWhiteSpace(_producto.CategoriaNombre))
+        {
+            <span class="chico">@_producto.CategoriaNombre</span>
+        }
+        <h1>@_producto.Nombre</h1>
+        <div class="precio-grande">@Formato.Dinero(_producto.PrecioVenta)</div>
+        <div class="stock @estado.Clase">@(_producto.Activo ? estado.Texto : "No disponible")</div>
+
+        @if (!string.IsNullOrWhiteSpace(_producto.Descripcion))
+        {
+            <h2>Descripción</h2>
+            <p>@_producto.Descripcion</p>
+        }
+
+        @if (!sinStock)
+        {
+            <label>Cantidad</label>
+            <div class="stepper">
+                <button disabled="@(_cantidad <= 1)" @onclick="() => _cantidad--">−</button>
+                <span>@_cantidad</span>
+                <button disabled="@(_cantidad >= _producto.StockActual)" @onclick="() => _cantidad++">+</button>
+            </div>
+            <button class="btn btn-bloque" @onclick="ComprarAhora">Comprar ahora</button>
+            <button class="btn btn-sec btn-bloque" @onclick="Agregar">Agregar al carrito</button>
+        }
+        else
+        {
+            <button class="btn btn-bloque" disabled>Sin stock</button>
+        }
+    </div>
+}
+
+<Toast @ref="_toast" />
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Producto? _producto;
+    private bool _cargando = true;
+    private string? _error;
+    private int _cantidad = 1;
+    private int _foto;
+    private Toast? _toast;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cargando = true;
+        _error = null;
+        _cantidad = 1;
+        _foto = 0;
+
+        var r = await Api.GetProductoAsync(Id);
+        if (r.Ok) _producto = r.Datos; else _error = r.Error;
+        if (r.Ok && _producto == null) _error = "No se encontró el producto.";
+
+        _cargando = false;
+    }
+
+    private string? AgregarAlCarrito() =>
+        Carrito.Agregar(_producto!, Api.PrimeraImagen(_producto!), _cantidad);
+
+    private async Task Agregar()
+    {
+        var error = AgregarAlCarrito();
+        await _toast!.Mostrar(error ?? "Agregado al carrito");
+    }
+
+    private async Task ComprarAhora()
+    {
+        var error = AgregarAlCarrito();
+        if (error != null) { await _toast!.Mostrar(error); return; }
+        Nav.NavigateTo("carrito");
+    }
+}

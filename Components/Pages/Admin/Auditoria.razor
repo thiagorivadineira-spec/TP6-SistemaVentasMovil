@@ -1,0 +1,96 @@
+﻿@page "/admin/auditoria"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+
+<PageTitle>Auditoría</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Auditoría y errores del servidor</h1>
+
+@if (_error != null) { <div class="aviso aviso-error">@_error</div> }
+
+<div class="fila">
+    <select value="@_accion" @onchange="AlFiltrar">
+        <option value="">Todas las acciones</option>
+        @foreach (var a in _acciones)
+        {
+            <option value="@a">@a</option>
+        }
+    </select>
+</div>
+
+@foreach (var r in _registros)
+{
+    <div class="card">
+        <div class="fila" style="align-items:center">
+            <strong>@r.Accion</strong>
+            <span class="chico" style="text-align:right">@Formato.Fecha(r.Fecha.ToLocalTime())</span>
+        </div>
+        <div class="chico">Usuario: @(r.Username ?? "—") · IP: @(r.DireccionIp ?? "—")</div>
+        @if (!string.IsNullOrWhiteSpace(r.Entidad))
+        {
+            <div class="chico">@r.Entidad @(r.EntidadId != null ? $"#{r.EntidadId}" : "")</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(r.Detalle))
+        {
+            <div style="font-size:.85rem;margin-top:.2rem">@r.Detalle</div>
+        }
+    </div>
+}
+
+@if (_cargando) { <p class="cargando">Cargando...</p> }
+else if (_registros.Count == 0 && _error == null) { <p class="vacio">No hay registros.</p> }
+
+@if (!_cargando && _pagina < _totalPaginas)
+{
+    <div class="pie-paginas"><button class="btn btn-sec" @onclick="CargarMas">Ver más</button></div>
+}
+
+@code {
+    private static readonly string[] _acciones =
+    {
+        "LOGIN_OK", "LOGIN_FALLIDO", "VENTA_CREADA", "COMPRA_CREADA",
+        "REPORTE_GENERADO", "REPORTE_ENVIADO", "REPORTE_ENVIO_FALLIDO",
+        "USUARIO_CREADO", "USUARIO_ACTIVADO", "USUARIO_DESACTIVADO",
+        "REGISTRO_CLIENTE", "PASSWORD_CAMBIADA", "ERROR"
+    };
+
+    private readonly List<RegistroAuditoria> _registros = new();
+    private string _accion = string.Empty;
+    private int _pagina;
+    private int _totalPaginas = 1;
+    private bool _cargando;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await CargarMas();
+
+    private async Task AlFiltrar(ChangeEventArgs e)
+    {
+        _accion = e.Value?.ToString() ?? string.Empty;
+        _registros.Clear();
+        _pagina = 0;
+        _totalPaginas = 1;
+        await CargarMas();
+    }
+
+    private async Task CargarMas()
+    {
+        _cargando = true;
+        _error = null;
+
+        var r = await Api.GetAuditoriaAsync(_pagina + 1, 20, _accion, null);
+
+        if (r.Ok && r.Datos != null)
+        {
+            _pagina = r.Datos.PaginaActual;
+            _totalPaginas = r.Datos.TotalPaginas;
+            _registros.AddRange(r.Datos.Datos);
+        }
+        else
+        {
+            _error = r.Error;
+        }
+
+        _cargando = false;
+    }
+}

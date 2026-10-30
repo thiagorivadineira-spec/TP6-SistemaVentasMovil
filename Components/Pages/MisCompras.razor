@@ -1,0 +1,92 @@
+﻿@page "/compras"
+@attribute [Authorize]
+@inject ApiClient Api
+
+<PageTitle>Compras</PageTitle>
+
+<AuthorizeView Roles="Cliente"><h1>Mis compras</h1></AuthorizeView>
+<AuthorizeView Roles="Cajero"><h1>Ventas que registré</h1></AuthorizeView>
+<AuthorizeView Roles="Admin"><h1>Todas las ventas</h1></AuthorizeView>
+
+@if (_error != null)
+{
+    <div class="aviso aviso-error">@_error</div>
+}
+
+@foreach (var v in _ventas)
+{
+    var id = v.Id;
+    <div class="card">
+        <div class="fila" style="align-items:center">
+            <div>
+                <strong>Compra Nº @v.Id</strong>
+                <div class="chico">@Formato.Fecha(v.Fecha)</div>
+                <div class="chico">Cliente: @v.NombreCliente</div>
+            </div>
+            <div style="text-align:right;flex:0 0 auto"><div class="precio">@Formato.Dinero(v.Total)</div></div>
+        </div>
+
+        <button class="btn btn-sec btn-chico btn-bloque" @onclick="() => Alternar(id)">
+            @(_abierta == id ? "Ocultar detalle" : "Ver detalle")
+        </button>
+
+        @if (_abierta == id)
+        {
+            <table class="tabla-simple" style="margin-top:.5rem">
+                <tr><th>Producto</th><th class="der">Cant.</th><th class="der">Subtotal</th></tr>
+                @foreach (var d in v.Detalles)
+                {
+                    <tr><td>@d.NombreProducto</td><td class="der">@d.Cantidad</td><td class="der">@Formato.Dinero(d.Subtotal)</td></tr>
+                }
+            </table>
+        }
+    </div>
+}
+
+@if (_cargando)
+{
+    <p class="cargando">Cargando...</p>
+}
+else if (_ventas.Count == 0 && _error == null)
+{
+    <p class="vacio">Todavía no hay compras registradas.</p>
+}
+
+@if (!_cargando && _pagina < _totalPaginas)
+{
+    <div class="pie-paginas"><button class="btn btn-sec" @onclick="CargarMas">Ver más</button></div>
+}
+
+@code {
+    private readonly List<VentaDto> _ventas = new();
+    private int _pagina;
+    private int _totalPaginas = 1;
+    private int _abierta;
+    private bool _cargando;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await CargarMas();
+
+    private async Task CargarMas()
+    {
+        _cargando = true;
+        _error = null;
+
+        var r = await Api.GetVentasAsync(_pagina + 1);
+
+        if (r.Ok && r.Datos != null)
+        {
+            _pagina = r.Datos.PaginaActual;
+            _totalPaginas = r.Datos.TotalPaginas;
+            _ventas.AddRange(r.Datos.Datos);
+        }
+        else
+        {
+            _error = r.Error;
+        }
+
+        _cargando = false;
+    }
+
+    private void Alternar(int id) => _abierta = _abierta == id ? 0 : id;
+}

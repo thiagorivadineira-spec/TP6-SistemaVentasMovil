@@ -1,0 +1,146 @@
+﻿@page "/admin/ingreso"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+
+<PageTitle>Ingreso de mercadería</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Ingreso de mercadería</h1>
+
+@if (_ok != null) { <div class="aviso aviso-ok">@_ok</div> }
+@if (_error != null) { <div class="aviso aviso-error">@_error</div> }
+
+<div class="card">
+    <label>Proveedor</label>
+    <select @bind="_proveedorId">
+        <option value="0">Elegí un proveedor...</option>
+        @foreach (var pr in _proveedores)
+        {
+            <option value="@pr.Id">@pr.RazonSocial</option>
+        }
+    </select>
+
+    <label>Agregar producto</label>
+    <input type="search" placeholder="Buscar producto por nombre..." value="@_buscar" @oninput="AlBuscar" />
+
+    @foreach (var p in _resultados)
+    {
+        <div class="fila" style="align-items:center;margin-top:.4rem">
+            <div>@p.Nombre <span class="chico">(stock @p.StockActual)</span></div>
+            <button class="btn btn-sec btn-chico" style="flex:0 0 auto" @onclick="() => Agregar(p)">Agregar</button>
+        </div>
+    }
+</div>
+
+@foreach (var l in _lineas)
+{
+    var linea = l;
+    <div class="card">
+        <div class="fila" style="align-items:center">
+            <strong>@linea.Producto.Nombre</strong>
+            <button class="btn btn-peligro btn-chico" style="flex:0 0 auto" @onclick="() => _lineas.Remove(linea)">Quitar</button>
+        </div>
+        <div class="fila">
+            <div><label>Cantidad</label><input type="number" min="1" step="1" inputmode="numeric" @bind="linea.Cantidad" /></div>
+            <div><label>Costo unitario ($)</label><input type="number" min="0" step="0.01" inputmode="decimal" @bind="linea.PrecioUnitario" /></div>
+        </div>
+        <div class="chico" style="margin-top:.3rem">Subtotal: @Formato.Dinero(linea.Cantidad * linea.PrecioUnitario)</div>
+    </div>
+}
+
+@if (_lineas.Count > 0)
+{
+    <div class="card">
+        <div class="total-barra"><span>Total</span><span>@Formato.Dinero(_lineas.Sum(l => l.Cantidad * l.PrecioUnitario))</span></div>
+        <button class="btn btn-bloque" disabled="@_guardando" @onclick="Registrar">
+            @(_guardando ? "Guardando..." : "Registrar ingreso")
+        </button>
+    </div>
+}
+
+@code {
+    private class Linea
+    {
+        public Producto Producto { get; set; } = null!;
+        public int Cantidad { get; set; } = 1;
+        public decimal PrecioUnitario { get; set; }
+    }
+
+    private List<Proveedor> _proveedores = new();
+    private readonly List<Linea> _lineas = new();
+    private List<Producto> _resultados = new();
+    private int _proveedorId;
+    private string _buscar = string.Empty;
+    private string? _ok;
+    private string? _error;
+    private bool _guardando;
+    private CancellationTokenSource? _debounce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetProveedoresAsync();
+        if (r.Ok && r.Datos != null) _proveedores = r.Datos.Datos.Where(p => p.Activo).ToList();
+        else _error = r.Error;
+    }
+
+    private async Task AlBuscar(ChangeEventArgs e)
+    {
+        _buscar = e.Value?.ToString() ?? string.Empty;
+
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+
+        try { await Task.Delay(400, _debounce.Token); }
+        catch (TaskCanceledException) { return; }
+
+        if (_buscar.Trim().Length < 2) { _resultados = new(); return; }
+
+        var r = await Api.GetProductosAsync(_buscar, 1, 6, "nombre");
+        _resultados = r.Ok && r.Datos != null ? r.Datos.Datos : new();
+    }
+
+    private void Agregar(Producto p)
+    {
+        if (_lineas.All(l => l.Producto.Id != p.Id))
+            _lineas.Add(new Linea { Producto = p });
+
+        _resultados = new();
+        _buscar = string.Empty;
+    }
+
+    private async Task Registrar()
+    {
+        _ok = null;
+        _error = null;
+
+        if (_proveedorId == 0) { _error = "Elegí un proveedor."; return; }
+        if (_lineas.Any(l => l.Cantidad <= 0 || l.PrecioUnitario <= 0))
+        {
+            _error = "Cada producto necesita una cantidad y un costo mayores a cero.";
+            return;
+        }
+
+        _guardando = true;
+
+        var r = await Api.CrearCompraAsync(new CompraRequest
+        {
+            ProveedorId = _proveedorId,
+            Detalles = _lineas.Select(l => new DetalleCompraRequest
+            {
+                ProductoId = l.Producto.Id, Cantidad = l.Cantidad, PrecioUnitario = l.PrecioUnitario
+            }).ToList()
+        });
+
+        _guardando = false;
+
+        if (r.Ok)
+        {
+            _ok = $"Ingreso registrado (Nº {r.Datos?.Id}). El stock ya está actualizado.";
+            _lineas.Clear();
+        }
+        else
+        {
+            _error = r.Error;
+        }
+    }
+}

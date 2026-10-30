@@ -1,0 +1,24 @@
+﻿@inherits ErrorBoundaryBase
+@inject ErrorLog Log
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <div class="aviso aviso-error">
+        <strong>Ocurrió un error inesperado.</strong>
+        <p>Quedó registrado en el log de la app. Podés reintentar.</p>
+        <button class="btn" @onclick="Recover">Reintentar</button>
+    </div>
+}
+
+@code {
+    // Cualquier excepción de una pantalla se guarda en el log local y no tira abajo la app
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        Log.Registrar("Pantalla", exception);
+        return Task.CompletedTask;
+    }
+}

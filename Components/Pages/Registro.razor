@@ -1,0 +1,102 @@
+﻿@page "/registro"
+@inject ApiClient Api
+@inject AppAuthStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Crear cuenta</PageTitle>
+
+<h1>Crear cuenta</h1>
+
+<div class="card">
+    <p class="chico">Las cuentas nuevas son siempre de tipo Cliente.</p>
+
+    @if (_error != null)
+    {
+        <div class="aviso aviso-error">@_error</div>
+    }
+
+    <label>Nombre y apellido *</label>
+    <input type="text" @bind="_m.Nombre" />
+    <label>Usuario *</label>
+    <input type="text" autocapitalize="none" @bind="_m.Username" />
+    <label>Contraseña * (mínimo 6 caracteres)</label>
+    <input type="password" @bind="_m.Password" />
+    <label>Repetir contraseña *</label>
+    <input type="password" @bind="_repetir" />
+    <label>Correo electrónico</label>
+    <input type="email" @bind="_m.Email" />
+    <div class="fila">
+        <div><label>DNI</label><input type="text" inputmode="numeric" @bind="_m.Documento" /></div>
+        <div><label>Teléfono</label><input type="tel" @bind="_m.Telefono" /></div>
+    </div>
+    <label>Dirección</label>
+    <input type="text" @bind="_m.Direccion" />
+
+    <button class="btn btn-bloque" disabled="@_cargando" @onclick="Registrar">
+        @(_cargando ? "Creando cuenta..." : "Crear cuenta")
+    </button>
+    <a class="btn btn-sec btn-bloque" href="login">Ya tengo cuenta</a>
+</div>
+
+@code {
+    private readonly RegistroRequest _m = new();
+    private string _repetir = string.Empty;
+    private string? _error;
+    private bool _cargando;
+
+    private async Task Registrar()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_m.Nombre) || string.IsNullOrWhiteSpace(_m.Username))
+        {
+            _error = "Completá nombre y usuario.";
+            return;
+        }
+        if (_m.Password is null || _m.Password.Length < 6)
+        {
+            _error = "La contraseña debe tener al menos 6 caracteres.";
+            return;
+        }
+        if (_m.Password != _repetir)
+        {
+            _error = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        // Los campos opcionales vacíos se mandan como null (la API valida el formato del correo)
+        _m.Email = string.IsNullOrWhiteSpace(_m.Email) ? null : _m.Email.Trim();
+        _m.Documento = string.IsNullOrWhiteSpace(_m.Documento) ? null : _m.Documento.Trim();
+        _m.Telefono = string.IsNullOrWhiteSpace(_m.Telefono) ? null : _m.Telefono.Trim();
+        _m.Direccion = string.IsNullOrWhiteSpace(_m.Direccion) ? null : _m.Direccion.Trim();
+
+        _cargando = true;
+        var r = await Api.RegistrarAsync(_m);
+
+        if (!r.Ok)
+        {
+            _cargando = false;
+            _error = r.Error;
+            return;
+        }
+
+        // Inicia sesión automáticamente con la cuenta recién creada
+        var login = await Api.LoginAsync(_m.Username.Trim(), _m.Password);
+        _cargando = false;
+
+        if (login.Ok && login.Datos != null)
+        {
+            await Auth.IniciarSesionAsync(new SesionUsuario
+            {
+                Token = login.Datos.Token, Expira = login.Datos.Expira, Id = login.Datos.Id,
+                Nombre = login.Datos.Nombre, Username = login.Datos.Username,
+                Rol = login.Datos.Rol, ClienteId = login.Datos.ClienteId
+            });
+            Nav.NavigateTo("");
+        }
+        else
+        {
+            Nav.NavigateTo("login");
+        }
+    }
+}

@@ -1,0 +1,15 @@
+﻿@page "/admin"
+@attribute [Authorize(Roles = "Admin")]
+
+<PageTitle>Administración</PageTitle>
+
+<h1>Panel de administración</h1>
+
+<div class="menu-admin">
+    <a href="admin/stock"><span>📊</span>Stock</a>
+    <a href="admin/ingreso"><span>📥</span>Ingreso de mercadería</a>
+    <a href="admin/productos"><span>🏷️</span>Productos y fotos</a>
+    <a href="admin/reportes"><span>📄</span>Reportes PDF</a>
+    <a href="admin/auditoria"><span>🕵️</span>Auditoría</a>
+    <a href="admin/errores"><span>🐞</span>Errores de la app</a>
+</div>

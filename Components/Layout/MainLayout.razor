@@ -1,0 +1,47 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject CarritoService Carrito
+
+<div class="app">
+    <header class="topbar">
+        <a href="" class="marca">🛒 Changomas</a>
+        <a href="carrito" class="carrito-btn" aria-label="Carrito">
+            🛍
+            @if (Carrito.CantidadTotal > 0)
+            {
+                <span class="badge-num">@Carrito.CantidadTotal</span>
+            }
+        </a>
+    </header>
+
+    <main class="contenido">
+        <BoundaryApp>
+            @Body
+        </BoundaryApp>
+    </main>
+
+    <nav class="tabbar">
+        <NavLink href="" Match="NavLinkMatch.All"><span>🏠</span>Catálogo</NavLink>
+        <NavLink href="carrito"><span>🛍</span>Carrito</NavLink>
+        <AuthorizeView>
+            <Authorized>
+                <NavLink href="compras"><span>🧾</span>Compras</NavLink>
+                <AuthorizeView Roles="Admin" Context="admin">
+                    <NavLink href="admin"><span>⚙️</span>Admin</NavLink>
+                </AuthorizeView>
+                <NavLink href="cuenta"><span>👤</span>Cuenta</NavLink>
+            </Authorized>
+            <NotAuthorized>
+                <NavLink href="login"><span>👤</span>Ingresar</NavLink>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    protected override void OnInitialized() => Carrito.Cambio += AlCambiar;
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Carrito.Cambio -= AlCambiar;
+}

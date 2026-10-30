@@ -1,0 +1,52 @@
+﻿@page "/admin/errores"
+@attribute [Authorize(Roles = "Admin")]
+@inject ErrorLog Log
+@inject ArchivoService Archivos
+
+<PageTitle>Errores de la app</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Errores de la app</h1>
+
+<div class="aviso aviso-info">
+    Acá se registran los problemas que ocurren en el teléfono (sin conexión, respuestas inesperadas, errores de pantalla).
+    Los errores del servidor se consultan en <a href="admin/auditoria">Auditoría</a>.
+</div>
+
+<div class="fila" style="margin-bottom:.6rem">
+    <button class="btn btn-sec" @onclick="Actualizar">Actualizar</button>
+    <button class="btn btn-sec" @onclick="Compartir">Compartir log</button>
+    <button class="btn btn-peligro" @onclick="Limpiar">Borrar</button>
+</div>
+
+@if (string.IsNullOrWhiteSpace(_texto))
+{
+    <p class="vacio">Sin errores registrados. 🎉</p>
+}
+else
+{
+    <pre class="log">@_texto</pre>
+}
+
+@code {
+    private string _texto = string.Empty;
+
+    protected override void OnInitialized() => Actualizar();
+
+    private void Actualizar() => _texto = Log.Leer();
+
+    private void Limpiar()
+    {
+        Log.Limpiar();
+        Actualizar();
+    }
+
+    private async Task Compartir()
+    {
+        if (string.IsNullOrWhiteSpace(_texto)) return;
+
+        var ruta = Path.Combine(FileSystem.CacheDirectory, "errores-app.txt");
+        await File.WriteAllTextAsync(ruta, _texto);
+        await Share.Default.RequestAsync(new ShareFileRequest { Title = "Log de errores", File = new ShareFile(ruta) });
+    }
+}

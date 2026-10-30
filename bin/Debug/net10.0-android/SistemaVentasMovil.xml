@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SistemaVentasMovil</name>
+    </assembly>
+    <members>
+        <member name="T:SistemaVentasMovil.Models.ProductoRequest">
+            <summary>Cuerpo para crear / editar un producto (solo Admin).</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Models.LineaCarrito">
+            <summary>Una línea del carrito. Guarda una "foto" del producto para poder mostrarlo sin conexión.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Models.Comprobante">
+            <summary>Comprobante que se muestra al terminar una compra.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.ApiResultado`1">
+            <summary>Resultado de una llamada a la API: o trae datos, o trae un mensaje de error listo para mostrar.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.ApiClient">
+            <summary>
+            Único lugar donde la app habla con la API: arma las URL, agrega el token JWT,
+            interpreta los errores, los registra en el log local y, si el token venció (401), vuelve al login.
+            </summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ApiClient.SubirImagenAsync(System.Int32,System.Byte[],System.String,System.String)">
+            <summary>Sube una foto (jpg/png, máx. 5 MB). El campo multipart se llama "archivo".</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ApiClient.UrlImagen(System.String)">
+            <summary>Convierte la ruta de una imagen de la API ("/uploads/x.png") en una URL completa.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ApiClient.LeerErrorAsync(System.Net.Http.HttpResponseMessage)">
+            <summary>Extrae un mensaje legible de las distintas formas de error que devuelve la API.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.AppAuthStateProvider">
+            <summary>
+            Le dice a Blazor quién es el usuario actual y cuál es su rol, a partir de la sesión guardada.
+            Sirve para mostrar u ocultar pantallas; la seguridad real la aplica la API con el token.
+            </summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.AppConfig">
+            <summary>Configuración de la app. Es la única línea que cambia si la API cambia de dirección.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.ArchivoService">
+            <summary>Todo lo que toca archivos del teléfono: guardar/compartir/abrir PDFs y preparar fotos para subir.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ArchivoService.GuardarPdfAsync(System.String,System.Byte[])">
+            <summary>Guarda el PDF en la carpeta temporal de la app y devuelve su ruta.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ArchivoService.CompartirAsync(System.String,System.String)">
+            <summary>Abre el selector de Android para enviar el PDF por WhatsApp, Drive, correo, etc.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ArchivoService.AbrirAsync(System.String,System.String)">
+            <summary>Abre el PDF con el visor que tenga el teléfono.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.ArchivoService.ElegirFotoAsync">
+            <summary>
+            El usuario elige una foto de la galería. Se reduce (máx. 1600 px), se corrige la rotación y se pasa a JPG
+            para que entre en el límite de 5 MB de la API. Devuelve null si cancela.
+            </summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.CarritoService">
+            <summary>
+            Carrito de compras. Se guarda en el teléfono (Preferences), así que sobrevive si se cierra la app.
+            Nunca deja agregar más unidades que el stock conocido del producto.
+            </summary>
+        </member>
+        <member name="P:SistemaVentasMovil.Services.CarritoService.UltimoComprobante">
+            <summary>Último comprobante generado (para mostrarlo después de pagar).</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.CarritoService.Agregar(SistemaVentasMovil.Models.Producto,System.String,System.Int32)">
+            <summary>Agrega unidades. Devuelve un mensaje de error, o null si salió bien.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.CarritoService.CambiarCantidad(System.Int32,System.Int32)">
+            <summary>Cambia la cantidad de una línea sin pasarse del stock. Devuelve un mensaje si se limitó.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.CarritoService.Sincronizar(System.Collections.Generic.IDictionary{System.Int32,SistemaVentasMovil.Models.Producto})">
+            <summary>
+            Actualiza precio y stock con los datos reales del servidor.
+            Devuelve la lista de avisos (productos que ya no están o cuya cantidad se ajustó).
+            </summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.ErrorLog">
+            <summary>
+            Registro de errores de la app en un archivo del teléfono (errores-app.log).
+            Los errores del servidor los registra la API (Serilog + tabla de auditoría);
+            este log cubre lo que pasa dentro de la app: fallas de red, errores de pantalla, excepciones no controladas.
+            </summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.Formato">
+            <summary>Formatos de dinero y fechas en español de Argentina, y estado de stock de un producto.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.Formato.EstadoStock(SistemaVentasMovil.Models.Producto)">
+            <summary>Clase CSS y texto para mostrar la disponibilidad como en un e-commerce.</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.PagoService">
+             <summary>
+             PAGO SIMULADO. Valida los datos de la tarjeta como lo haría un checkout real (largo, algoritmo de Luhn,
+             vencimiento, CVV) y "aprueba" o "rechaza" sin conectarse a ninguna pasarela de pagos.
+             Los datos de la tarjeta NO se envían a la API ni se guardan en ningún lado.
+            
+             Tarjetas de prueba:  4242 4242 4242 4242 (aprobada)  ·  4000 0000 0000 0002 (rechazada)
+             </summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Services.PagoService.Validar(SistemaVentasMovil.Services.DatosTarjeta)">
+            <summary>Devuelve la lista de problemas de los datos ingresados (vacía si está todo bien).</summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Services.SesionService">
+            <summary>
+            Guarda la sesión (token JWT + datos del usuario) en SecureStorage, el almacén cifrado de Android.
+            Si el token venció, la sesión se descarta sola.
+            </summary>
+        </member>
+        <member name="T:SistemaVentasMovil.Resource">
+            <summary>
+            Android Resource Designer class.
+            Exposes the Android Resource designer assembly into the project Namespace.
+            </summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Components.Pages.CarritoPagina.Sincronizar">
+            <summary>Consulta el stock y precio reales de cada producto del carrito antes de mostrarlo.</summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Components.Pages.Catalogo.Cargar(System.Boolean)">
+            <summary>
+            Carga una página más. Con una categoría elegida se traen todas las páginas
+            (la API no filtra por categoría) y se filtra en el teléfono.
+            </summary>
+        </member>
+        <member name="M:SistemaVentasMovil.Components.Toast.Mostrar(System.String,System.Int32)">
+            <summary>Muestra un mensaje breve abajo de la pantalla.</summary>
+        </member>
+    </members>
+</doc>

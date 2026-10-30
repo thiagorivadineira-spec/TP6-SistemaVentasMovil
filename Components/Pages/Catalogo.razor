@@ -1,0 +1,175 @@
+﻿@page "/"
+@inject ApiClient Api
+@inject CarritoService Carrito
+
+<PageTitle>Catálogo</PageTitle>
+
+<div class="buscador">
+    <input type="search" placeholder="Buscar productos..." value="@_buscar" @oninput="AlBuscar" />
+</div>
+
+<div class="chips">
+    <button class="chip @(_categoriaId == 0 ? "sel" : "")" @onclick="() => ElegirCategoria(0)">Todas</button>
+    @foreach (var c in _categorias)
+    {
+        var id = c.Id;
+        <button class="chip @(_categoriaId == id ? "sel" : "")" @onclick="() => ElegirCategoria(id)">@c.Nombre</button>
+    }
+</div>
+
+<div class="fila" style="margin-bottom:.6rem">
+    <select value="@_orden" @onchange="AlOrdenar">
+        <option value="nombre">Ordenar: A-Z</option>
+        <option value="precio_asc">Menor precio</option>
+        <option value="precio_desc">Mayor precio</option>
+    </select>
+</div>
+
+@if (_error != null)
+{
+    <div class="aviso aviso-error">@_error <button class="btn btn-chico" @onclick="() => Cargar(true)">Reintentar</button></div>
+}
+
+<div class="grilla">
+    @foreach (var p in Visibles)
+    {
+        var estado = Formato.EstadoStock(p);
+        var img = Api.PrimeraImagen(p);
+        var sinStock = p.StockActual <= 0;
+        <div class="producto">
+            <a href="producto/@p.Id" style="color:inherit">
+                @if (img != null)
+                {
+                    <img class="foto" src="@img" alt="@p.Nombre" loading="lazy" />
+                }
+                else
+                {
+                    <div class="foto">📦</div>
+                }
+            </a>
+            <div class="info">
+                <a href="producto/@p.Id" class="nombre" style="color:inherit">@p.Nombre</a>
+                <div class="precio">@Formato.Dinero(p.PrecioVenta)</div>
+                <div class="stock @estado.Clase">@estado.Texto</div>
+                <button class="btn" disabled="@sinStock" @onclick="() => Agregar(p)">@(sinStock ? "Sin stock" : "Agregar")</button>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_cargando)
+{
+    <p class="cargando">Cargando...</p>
+}
+else if (!Visibles.Any() && _error == null)
+{
+    <p class="vacio">No encontramos productos.</p>
+}
+
+@if (!_cargando && _categoriaId == 0 && _pagina < _totalPaginas)
+{
+    <div class="pie-paginas"><button class="btn btn-sec" @onclick="() => Cargar(false)">Ver más productos</button></div>
+}
+
+<Toast @ref="_toast" />
+
+@code {
+    private const int Tamano = 20;
+
+    private readonly List<Producto> _productos = new();
+    private List<Categoria> _categorias = new();
+    private string _buscar = string.Empty;
+    private string _orden = "nombre";
+    private int _categoriaId;
+    private int _pagina;
+    private int _totalPaginas = 1;
+    private int _version;
+    private bool _cargando;
+    private string? _error;
+    private CancellationTokenSource? _debounce;
+    private Toast? _toast;
+
+    private IEnumerable<Producto> Visibles =>
+        _categoriaId == 0 ? _productos : _productos.Where(p => p.CategoriaProductoId == _categoriaId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cats = await Api.GetCategoriasAsync();
+        if (cats.Ok && cats.Datos != null) _categorias = cats.Datos.Where(c => c.Activo).ToList();
+
+        await Cargar(true);
+    }
+
+    /// <summary>
+    /// Carga una página más. Con una categoría elegida se traen todas las páginas
+    /// (la API no filtra por categoría) y se filtra en el teléfono.
+    /// </summary>
+    private async Task Cargar(bool reiniciar)
+    {
+        var version = ++_version;
+
+        if (reiniciar)
+        {
+            _productos.Clear();
+            _pagina = 0;
+            _totalPaginas = 1;
+        }
+
+        _cargando = true;
+        _error = null;
+        StateHasChanged();
+
+        var cargarTodo = _categoriaId != 0;
+
+        while (true)
+        {
+            var r = await Api.GetProductosAsync(_buscar, _pagina + 1, Tamano, _orden);
+            if (version != _version) return; // llegó una búsqueda más nueva
+
+            if (!r.Ok || r.Datos == null)
+            {
+                _error = r.Error;
+                break;
+            }
+
+            _pagina = r.Datos.PaginaActual;
+            _totalPaginas = r.Datos.TotalPaginas;
+            _productos.AddRange(r.Datos.Datos);
+
+            if (!cargarTodo || _pagina >= _totalPaginas || _pagina >= 10) break;
+        }
+
+        _cargando = false;
+    }
+
+    private async Task AlBuscar(ChangeEventArgs e)
+    {
+        _buscar = e.Value?.ToString() ?? string.Empty;
+
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+
+        try { await Task.Delay(400, _debounce.Token); }
+        catch (TaskCanceledException) { return; }
+
+        await Cargar(true);
+    }
+
+    private async Task AlOrdenar(ChangeEventArgs e)
+    {
+        _orden = e.Value?.ToString() ?? "nombre";
+        await Cargar(true);
+    }
+
+    private async Task ElegirCategoria(int id)
+    {
+        _categoriaId = id;
+        await Cargar(true);
+    }
+
+    private async Task Agregar(Producto p)
+    {
+        var error = Carrito.Agregar(p, Api.PrimeraImagen(p));
+        await _toast!.Mostrar(error ?? $"Agregaste «{p.Nombre}» al carrito");
+    }
+}

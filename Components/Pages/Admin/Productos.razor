@@ -1,0 +1,221 @@
+﻿@page "/admin/productos"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+@inject ArchivoService Archivos
+
+<PageTitle>Productos</PageTitle>
+
+<p><a href="admin">← Panel</a></p>
+<h1>Productos y fotos</h1>
+
+@if (_ok != null) { <div class="aviso aviso-ok">@_ok</div> }
+@if (_error != null) { <div class="aviso aviso-error">@_error</div> }
+
+@if (_editando != null)
+{
+    <div class="card">
+        <h2 style="margin-top:0">@(_idEditado == 0 ? "Nuevo producto" : "Editar producto")</h2>
+
+        <label>Nombre *</label>
+        <input type="text" maxlength="100" @bind="_editando.Nombre" />
+        <label>Descripción</label>
+        <textarea rows="3" maxlength="255" @bind="_editando.Descripcion"></textarea>
+        <label>Categoría *</label>
+        <select @bind="_editando.CategoriaProductoId">
+            <option value="0">Elegí una categoría...</option>
+            @foreach (var c in _categorias)
+            {
+                <option value="@c.Id">@c.Nombre</option>
+            }
+        </select>
+        <div class="fila">
+            <div><label>Precio de venta ($) *</label><input type="number" min="0" step="0.01" inputmode="decimal" @bind="_editando.PrecioVenta" /></div>
+            <div><label>Stock actual</label><input type="number" min="0" inputmode="numeric" @bind="_editando.StockActual" /></div>
+        </div>
+        <div class="fila">
+            <div><label>Punto de reposición</label><input type="number" min="0" inputmode="numeric" @bind="_editando.PuntoReposicion" /></div>
+            <div><label>Stock máximo</label><input type="number" min="0" inputmode="numeric" @bind="_editando.StockMaximo" /></div>
+        </div>
+        <label><input type="checkbox" @bind="_editando.Activo" /> Visible en el catálogo</label>
+
+        <button class="btn btn-bloque" disabled="@_guardando" @onclick="Guardar">@(_guardando ? "Guardando..." : "Guardar")</button>
+
+        @if (_idEditado != 0)
+        {
+            <div class="separador"></div>
+            <h2 style="margin-top:0">Fotos</h2>
+            <div class="miniaturas">
+                @foreach (var i in _fotos)
+                {
+                    <img src="@Api.UrlImagen(i.Url)" alt="" />
+                }
+                @if (_fotos.Count == 0) { <span class="chico">Sin fotos todavía.</span> }
+            </div>
+            <button class="btn btn-sec btn-bloque" disabled="@_subiendo" @onclick="SubirFoto">
+                @(_subiendo ? "Subiendo foto..." : "📷 Agregar foto desde la galería")
+            </button>
+        }
+        else
+        {
+            <p class="chico">Guardá el producto primero para poder agregarle fotos.</p>
+        }
+
+        <button class="btn btn-peligro btn-bloque" @onclick="Cerrar">Cerrar</button>
+    </div>
+}
+else
+{
+    <button class="btn btn-bloque" @onclick="Nuevo">+ Nuevo producto</button>
+    <input type="search" style="margin-top:.6rem" placeholder="Buscar producto..." value="@_buscar" @oninput="AlBuscar" />
+
+    @foreach (var p in _productos)
+    {
+        var producto = p;
+        var img = Api.PrimeraImagen(p);
+        <div class="card linea" style="margin-top:.6rem">
+            @if (img != null) { <img src="@img" alt="" /> } else { <div class="miniatura">📦</div> }
+            <div class="datos">
+                <div class="n"><strong>@p.Nombre</strong></div>
+                <div>@Formato.Dinero(p.PrecioVenta) · stock @p.StockActual</div>
+                @if (!p.Activo) { <span class="insignia sin">Dado de baja</span> }
+                <div style="margin-top:.3rem"><button class="btn btn-sec btn-chico" @onclick="() => Editar(producto)">Editar</button></div>
+            </div>
+        </div>
+    }
+
+    @if (_cargando) { <p class="cargando">Cargando...</p> }
+}
+
+@code {
+    private List<Producto> _productos = new();
+    private List<Categoria> _categorias = new();
+    private List<ImagenProducto> _fotos = new();
+    private ProductoRequest? _editando;
+    private int _idEditado;
+    private string _buscar = string.Empty;
+    private string? _ok;
+    private string? _error;
+    private bool _cargando;
+    private bool _guardando;
+    private bool _subiendo;
+    private CancellationTokenSource? _debounce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cats = await Api.GetCategoriasAsync();
+        if (cats.Ok && cats.Datos != null) _categorias = cats.Datos.Where(c => c.Activo).ToList();
+
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        var r = await Api.GetProductosAsync(_buscar, 1, 50, "nombre");
+        if (r.Ok && r.Datos != null) _productos = r.Datos.Datos; else _error = r.Error;
+        _cargando = false;
+    }
+
+    private async Task AlBuscar(ChangeEventArgs e)
+    {
+        _buscar = e.Value?.ToString() ?? string.Empty;
+
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+
+        try { await Task.Delay(400, _debounce.Token); }
+        catch (TaskCanceledException) { return; }
+
+        await Cargar();
+    }
+
+    private void Nuevo()
+    {
+        _ok = _error = null;
+        _idEditado = 0;
+        _fotos = new();
+        _editando = new ProductoRequest { Activo = true, CategoriaProductoId = _categorias.FirstOrDefault()?.Id ?? 0 };
+    }
+
+    private void Editar(Producto p)
+    {
+        _ok = _error = null;
+        _idEditado = p.Id;
+        _fotos = p.Imagenes.ToList();
+        _editando = new ProductoRequest
+        {
+            Nombre = p.Nombre, Descripcion = p.Descripcion, PrecioVenta = p.PrecioVenta,
+            StockActual = p.StockActual, PuntoReposicion = p.PuntoReposicion, StockMaximo = p.StockMaximo,
+            Activo = p.Activo, CategoriaProductoId = p.CategoriaProductoId
+        };
+    }
+
+    private async Task Cerrar()
+    {
+        _editando = null;
+        await Cargar();
+    }
+
+    private async Task Guardar()
+    {
+        _ok = _error = null;
+
+        if (_editando == null) return;
+        if (string.IsNullOrWhiteSpace(_editando.Nombre)) { _error = "El nombre es obligatorio."; return; }
+        if (_editando.CategoriaProductoId == 0) { _error = "Elegí una categoría."; return; }
+        if (_editando.PrecioVenta <= 0) { _error = "El precio debe ser mayor a cero."; return; }
+        if (_editando.StockActual < 0 || _editando.PuntoReposicion < 0 || _editando.StockMaximo < 0)
+        {
+            _error = "Los valores de stock no pueden ser negativos.";
+            return;
+        }
+
+        _guardando = true;
+
+        if (_idEditado == 0)
+        {
+            var r = await Api.CrearProductoAsync(_editando);
+            if (r.Ok && r.Datos != null)
+            {
+                _idEditado = r.Datos.Id; // ya se pueden agregar fotos
+                _ok = "Producto creado. Ahora podés agregarle fotos.";
+            }
+            else _error = r.Error;
+        }
+        else
+        {
+            var r = await Api.ActualizarProductoAsync(_idEditado, _editando);
+            if (r.Ok) _ok = "Cambios guardados."; else _error = r.Error;
+        }
+
+        _guardando = false;
+    }
+
+    private async Task SubirFoto()
+    {
+        _ok = _error = null;
+        _subiendo = true;
+
+        try
+        {
+            var foto = await Archivos.ElegirFotoAsync();
+            if (foto == null) return;
+
+            var r = await Api.SubirImagenAsync(_idEditado, foto.Value.Bytes, foto.Value.Nombre, foto.Value.Tipo);
+            if (!r.Ok) { _error = r.Error; return; }
+
+            // Se vuelve a pedir el producto para mostrar la foto recién subida
+            var p = await Api.GetProductoAsync(_idEditado);
+            if (p.Ok && p.Datos != null) _fotos = p.Datos.Imagenes.ToList();
+            _ok = "Foto subida.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is InvalidOperationException ? ex.Message : "No se pudo leer la foto elegida.";
+        }
+        finally
+        {
+            _subiendo = false;
+        }
+    }
+}

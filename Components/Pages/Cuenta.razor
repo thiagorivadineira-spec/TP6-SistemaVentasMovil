@@ -1,0 +1,67 @@
+﻿@page "/cuenta"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppAuthStateProvider Auth
+@inject SesionService Sesion
+@inject NavigationManager Nav
+
+<PageTitle>Mi cuenta</PageTitle>
+
+<h1>Mi cuenta</h1>
+
+@if (_sesion != null)
+{
+    <div class="card">
+        <div><strong>@_sesion.Nombre</strong></div>
+        <div class="chico">Usuario: @_sesion.Username</div>
+        <div class="chico">Rol: <span class="insignia ok">@_sesion.Rol</span></div>
+        <div class="chico">La sesión vence: @Formato.Fecha(_sesion.Expira.ToLocalTime())</div>
+    </div>
+}
+
+<div class="card">
+    <h2 style="margin-top:0">Cambiar contraseña</h2>
+
+    @if (_ok != null) { <div class="aviso aviso-ok">@_ok</div> }
+    @if (_error != null) { <div class="aviso aviso-error">@_error</div> }
+
+    <label>Contraseña actual</label>
+    <input type="password" @bind="_actual" />
+    <label>Contraseña nueva (mínimo 6)</label>
+    <input type="password" @bind="_nueva" />
+    <button class="btn btn-bloque" disabled="@_cargando" @onclick="Cambiar">Cambiar contraseña</button>
+</div>
+
+<button class="btn btn-peligro btn-bloque" @onclick="Salir">Cerrar sesión</button>
+
+@code {
+    private SesionUsuario? _sesion;
+    private string _actual = string.Empty;
+    private string _nueva = string.Empty;
+    private string? _ok;
+    private string? _error;
+    private bool _cargando;
+
+    protected override async Task OnInitializedAsync() => _sesion = await Sesion.ObtenerAsync();
+
+    private async Task Cambiar()
+    {
+        _ok = null;
+        _error = null;
+
+        if (_nueva.Length < 6) { _error = "La contraseña nueva debe tener al menos 6 caracteres."; return; }
+
+        _cargando = true;
+        var r = await Api.CambiarPasswordAsync(_actual, _nueva);
+        _cargando = false;
+
+        if (r.Ok) { _ok = "Contraseña actualizada."; _actual = _nueva = string.Empty; }
+        else _error = r.Error;
+    }
+
+    private async Task Salir()
+    {
+        await Auth.CerrarSesionAsync();
+        Nav.NavigateTo("", replace: true);
+    }
+}

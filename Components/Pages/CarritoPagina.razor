@@ -1,0 +1,121 @@
+﻿@page "/carrito"
+@inject ApiClient Api
+@inject CarritoService Carrito
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Carrito</PageTitle>
+
+<h1>Mi carrito</h1>
+
+@foreach (var aviso in _avisos)
+{
+    <div class="aviso aviso-info">@aviso</div>
+}
+
+@if (_sincronizando)
+{
+    <p class="cargando">Verificando stock...</p>
+}
+else if (Carrito.Lineas.Count == 0)
+{
+    <div class="card vacio">
+        <p>Tu carrito está vacío.</p>
+        <a class="btn" href="">Ver productos</a>
+    </div>
+}
+else
+{
+    @foreach (var l in Carrito.Lineas)
+    {
+        var id = l.ProductoId;
+        <div class="card linea">
+            @if (l.ImagenUrl != null)
+            {
+                <img src="@l.ImagenUrl" alt="" />
+            }
+            else
+            {
+                <div class="miniatura">📦</div>
+            }
+            <div class="datos">
+                <div class="n">@l.Nombre</div>
+                <div class="precio">@Formato.Dinero(l.Precio)</div>
+                <div class="chico">Stock disponible: @l.Stock</div>
+                <div class="fila" style="align-items:center;margin-top:.3rem">
+                    <div class="stepper">
+                        <button @onclick="() => Cambiar(id, l.Cantidad - 1)">−</button>
+                        <span>@l.Cantidad</span>
+                        <button disabled="@(l.Cantidad >= l.Stock)" @onclick="() => Cambiar(id, l.Cantidad + 1)">+</button>
+                    </div>
+                    <button class="btn btn-peligro btn-chico" style="flex:0 0 auto" @onclick="() => Carrito.Quitar(id)">Quitar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="total-barra"><span>Total</span><span>@Formato.Dinero(Carrito.Total)</span></div>
+        <AuthorizeView>
+            <Authorized>
+                <button class="btn btn-bloque" @onclick="Pagar">Continuar con el pago</button>
+            </Authorized>
+            <NotAuthorized>
+                <div class="aviso aviso-info">Para pagar necesitás iniciar sesión.</div>
+                <a class="btn btn-bloque" href="login?volver=%2Fpago">Iniciar sesión</a>
+                <a class="btn btn-sec btn-bloque" href="registro">Crear cuenta</a>
+            </NotAuthorized>
+        </AuthorizeView>
+        <button class="btn btn-peligro btn-bloque" @onclick="Carrito.Vaciar">Vaciar carrito</button>
+    </div>
+}
+
+<Toast @ref="_toast" />
+
+@code {
+    private List<string> _avisos = new();
+    private bool _sincronizando;
+    private Toast? _toast;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Carrito.Cambio += AlCambiar;
+        await Sincronizar();
+    }
+
+    /// <summary>Consulta el stock y precio reales de cada producto del carrito antes de mostrarlo.</summary>
+    private async Task Sincronizar()
+    {
+        if (Carrito.Lineas.Count == 0) return;
+
+        _sincronizando = true;
+        var actuales = new Dictionary<int, Producto?>();
+        var fallo = false;
+
+        foreach (var l in Carrito.Lineas.ToList())
+        {
+            var r = await Api.GetProductoAsync(l.ProductoId);
+            if (r.Ok) actuales[l.ProductoId] = r.Datos;
+            else if (r.Error != null && r.Error.Contains("encontr")) actuales[l.ProductoId] = null;
+            else { fallo = true; break; }
+        }
+
+        _avisos = fallo
+            ? new List<string> { "No se pudo verificar el stock ahora. Se muestran los últimos datos conocidos." }
+            : Carrito.Sincronizar(actuales);
+
+        _sincronizando = false;
+    }
+
+    private async Task Cambiar(int id, int cantidad)
+    {
+        var aviso = Carrito.CambiarCantidad(id, cantidad);
+        if (aviso != null) await _toast!.Mostrar(aviso);
+    }
+
+    private void Pagar() => Nav.NavigateTo("pago");
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Carrito.Cambio -= AlCambiar;
+}

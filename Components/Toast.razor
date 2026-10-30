@@ -1,0 +1,26 @@
+﻿@if (_texto != null)
+{
+    <div class="toast">@_texto</div>
+}
+
+@code {
+    private string? _texto;
+    private CancellationTokenSource? _cts;
+
+    /// <summary>Muestra un mensaje breve abajo de la pantalla.</summary>
+    public async Task Mostrar(string texto, int milisegundos = 2200)
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        _texto = texto;
+        StateHasChanged();
+
+        try { await Task.Delay(milisegundos, token); }
+        catch (TaskCanceledException) { return; }
+
+        _texto = null;
+        StateHasChanged();
+    }
+}

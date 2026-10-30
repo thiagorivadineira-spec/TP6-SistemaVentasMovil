@@ -1,0 +1,199 @@
+﻿@page "/pago"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject CarritoService Carrito
+@inject PagoService Pagos
+@inject NavigationManager Nav
+
+<PageTitle>Pago</PageTitle>
+
+<h1>Pagar</h1>
+
+@if (_verificando)
+{
+    <p class="cargando">Verificando stock...</p>
+}
+else if (Carrito.Lineas.Count == 0)
+{
+    <div class="card vacio"><p>No hay productos para pagar.</p><a class="btn" href="">Ver productos</a></div>
+}
+else
+{
+    @foreach (var aviso in _avisos)
+    {
+        <div class="aviso aviso-info">@aviso</div>
+    }
+
+    <div class="card">
+        <h2 style="margin-top:0">Resumen</h2>
+        <table class="tabla-simple">
+            @foreach (var l in Carrito.Lineas)
+            {
+                <tr><td>@l.Cantidad × @l.Nombre</td><td class="der">@Formato.Dinero(l.Subtotal)</td></tr>
+            }
+        </table>
+        <div class="total-barra"><span>Total a pagar</span><span>@Formato.Dinero(Carrito.Total)</span></div>
+    </div>
+
+    <div class="aviso aviso-info">
+        💳 <strong>Pago simulado.</strong> No se cobra nada real y los datos de la tarjeta no se envían ni se guardan.
+        Probá con <strong>4242 4242 4242 4242</strong> (aprobada) o <strong>4000 0000 0000 0002</strong> (rechazada).
+    </div>
+
+    <div class="tarjeta-pago">
+        <div>@PagoService.Marca(_tarjeta.Numero)</div>
+        <div class="num">@(_tarjeta.Numero.Length == 0 ? "•••• •••• •••• ••••" : NumeroAgrupado)</div>
+        <div class="fila"><span>@(string.IsNullOrWhiteSpace(_tarjeta.Titular) ? "NOMBRE APELLIDO" : _tarjeta.Titular.ToUpperInvariant())</span><span style="text-align:right">@(_tarjeta.Vencimiento.Length == 0 ? "MM/AA" : _tarjeta.Vencimiento)</span></div>
+    </div>
+
+    <div class="card">
+        @if (_errores.Count > 0)
+        {
+            <div class="aviso aviso-error">
+                @foreach (var e in _errores) { <div>• @e</div> }
+            </div>
+        }
+        @if (_errorPago != null)
+        {
+            <div class="aviso aviso-error">@_errorPago</div>
+        }
+
+        <label>Titular de la tarjeta</label>
+        <input type="text" autocomplete="off" value="@_tarjeta.Titular" @oninput="e => _tarjeta.Titular = e.Value?.ToString() ?? string.Empty" />
+
+        <label>Número de tarjeta</label>
+        <input type="text" inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000 0000"
+               value="@NumeroAgrupado" @oninput="AlCambiarNumero" />
+
+        <div class="fila">
+            <div>
+                <label>Vencimiento</label>
+                <input type="text" inputmode="numeric" autocomplete="off" placeholder="MM/AA" maxlength="5"
+                       value="@_tarjeta.Vencimiento" @oninput="AlCambiarVencimiento" />
+            </div>
+            <div>
+                <label>Código (CVV)</label>
+                <input type="password" inputmode="numeric" autocomplete="off" maxlength="4"
+                       value="@_tarjeta.Cvv" @oninput="AlCambiarCvv" />
+            </div>
+        </div>
+
+        <button class="btn btn-bloque" disabled="@_procesando" @onclick="Pagar">
+            @(_procesando ? "Procesando pago..." : $"Pagar {Formato.Dinero(Carrito.Total)}")
+        </button>
+        <a class="btn btn-sec btn-bloque" href="carrito">Volver al carrito</a>
+    </div>
+}
+
+@code {
+    private readonly DatosTarjeta _tarjeta = new();
+    private List<string> _errores = new();
+    private List<string> _avisos = new();
+    private string? _errorPago;
+    private bool _verificando = true;
+    private bool _procesando;
+
+    private string NumeroAgrupado =>
+        string.Join(' ', Enumerable.Range(0, (_tarjeta.Numero.Length + 3) / 4)
+            .Select(i => _tarjeta.Numero.Substring(i * 4, Math.Min(4, _tarjeta.Numero.Length - i * 4))));
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Antes de cobrar se vuelve a consultar el stock real de cada producto
+        var actuales = new Dictionary<int, Producto?>();
+
+        foreach (var l in Carrito.Lineas.ToList())
+        {
+            var r = await Api.GetProductoAsync(l.ProductoId);
+            actuales[l.ProductoId] = r.Ok ? r.Datos : null;
+        }
+
+        _avisos = Carrito.Sincronizar(actuales);
+        _verificando = false;
+    }
+
+    private void AlCambiarNumero(ChangeEventArgs e)
+    {
+        var digitos = new string((e.Value?.ToString() ?? string.Empty).Where(char.IsDigit).Take(19).ToArray());
+        _tarjeta.Numero = digitos;
+    }
+
+    private void AlCambiarVencimiento(ChangeEventArgs e)
+    {
+        var d = new string((e.Value?.ToString() ?? string.Empty).Where(char.IsDigit).Take(4).ToArray());
+        _tarjeta.Vencimiento = d.Length > 2 ? d[..2] + "/" + d[2..] : d;
+    }
+
+    private void AlCambiarCvv(ChangeEventArgs e) =>
+        _tarjeta.Cvv = new string((e.Value?.ToString() ?? string.Empty).Where(char.IsDigit).Take(4).ToArray());
+
+    private async Task Pagar()
+    {
+        _errorPago = null;
+        _errores = Pagos.Validar(_tarjeta);
+        if (_errores.Count > 0) return;
+
+        if (Carrito.Lineas.Count == 0) return;
+
+        _procesando = true;
+
+        try
+        {
+            // 1) Pago simulado
+            var pago = await Pagos.ProcesarAsync(_tarjeta, Carrito.Total);
+
+            if (!pago.Aprobado)
+            {
+                _errorPago = pago.Mensaje;
+                return;
+            }
+
+            // 2) Registrar la venta en la API (descuenta el stock de forma atómica)
+            var pedido = new VentaRequest
+            {
+                Detalles = Carrito.Lineas
+                    .Select(l => new DetalleVentaRequest { ProductoId = l.ProductoId, Cantidad = l.Cantidad })
+                    .ToList()
+            };
+
+            var lineas = Carrito.Lineas.Select(l => new LineaCarrito
+            {
+                ProductoId = l.ProductoId, Nombre = l.Nombre, Precio = l.Precio,
+                Cantidad = l.Cantidad, Stock = l.Stock, ImagenUrl = l.ImagenUrl
+            }).ToList();
+
+            var venta = await Api.CrearVentaAsync(pedido);
+
+            if (!venta.Ok || venta.Datos == null)
+            {
+                _errorPago = "No se pudo completar la compra: " + venta.Error +
+                             " El pago simulado se anuló y no se te cobró nada.";
+                return;
+            }
+
+            Carrito.UltimoComprobante = new Comprobante
+            {
+                VentaId = venta.Datos.VentaId,
+                Fecha = DateTime.Now,
+                Total = venta.Datos.Total,
+                Pago = pago.TarjetaEnmascarada,
+                ReferenciaPago = pago.Referencia,
+                Lineas = lineas
+            };
+
+            Carrito.Vaciar();
+            Nav.NavigateTo($"comprobante/{venta.Datos.VentaId}");
+        }
+        finally
+        {
+            // Por seguridad, los datos de la tarjeta no quedan en memoria
+            if (_errorPago == null)
+            {
+                _tarjeta.Numero = string.Empty;
+                _tarjeta.Cvv = string.Empty;
+            }
+
+            _procesando = false;
+        }
+    }
+}
